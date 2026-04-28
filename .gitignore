@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# Prisma 7+ generated client (recreated by prisma generate)
+/generated/
+
 # production
 /build
 
@@ -30,8 +33,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (local secrets; keep .env.example tracked)
 .env*
+!.env.example
 
 # vercel
 .vercel

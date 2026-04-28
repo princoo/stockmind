@@ -1,0 +1,139 @@
+// SmartStock — database schema. Models will be added in later steps.
+// Connection URLs live in prisma.config.ts (Prisma ORM 7+).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+enum TransactionType {
+  STOCK_IN
+  STOCK_OUT
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STOCK_CHANGE
+}
+
+enum AuditEntity {
+  PRODUCT
+  CATEGORY
+  SUPPLIER
+  TRANSACTION
+  USER
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  ALERT
+}
+
+model User {
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  password      String
+  role          Role
+  createdAt     DateTime       @default(now())
+  transactions  Transaction[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+}
+
+model Product {
+  id                String        @id @default(cuid())
+  name              String
+  sku               String        @unique
+  price             Decimal       @db.Decimal(10, 2)
+  quantity          Int           @default(0)
+  lowStockThreshold Int
+  createdAt         DateTime      @default(now())
+  categoryId        String
+  supplierId        String
+  category          Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  supplier          Supplier      @relation(fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  transactions      Transaction[]
+
+  @@index([categoryId])
+  @@index([supplierId])
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String    @default("")
+  createdAt   DateTime  @default(now())
+  products    Product[]
+}
+
+model Supplier {
+  id            String    @id @default(cuid())
+  name          String
+  contactInfo   String    @default("")
+  contactPerson String?
+  email         String?
+  phone         String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  products      Product[]
+}
+
+model Transaction {
+  id        String          @id @default(cuid())
+  type      TransactionType
+  quantity  Int
+  createdAt DateTime        @default(now())
+  productId String
+  userId    String
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  user      User            @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([productId, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  action    AuditAction
+  entity    AuditEntity
+  entityId  String
+  createdAt DateTime    @default(now())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([entity, entityId, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  message    String
+  type       NotificationType
+  entityType String?
+  entityId   String?
+  href       String?
+  isRead     Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
