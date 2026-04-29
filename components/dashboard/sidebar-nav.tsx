@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { DashboardNavItem } from "@/components/dashboard/nav-items";
 
-function isActive(pathname: string, href: string) {
+function isActive(pathname: string | null, href: string) {
   return pathname === href;
 }
 

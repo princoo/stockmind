@@ -51,6 +51,8 @@ export function useReportsData() {
   }, [queryParams]);
 
   useEffect(() => {
+    // Data fetching for this hook is intentionally triggered from an effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ProductListItem } from "@/types/products";
 
 type MovementType = "STOCK_IN" | "STOCK_OUT";
@@ -15,17 +15,20 @@ type Props = {
 };
 
 export function StockMovementModal(props: Readonly<Props>) {
+  if (!props.open || !props.product) return null;
+
+  return (
+    <StockMovementModalInner
+      key={`${props.type}-${props.product.id}-${props.open ? "open" : "closed"}`}
+      {...props}
+      product={props.product}
+    />
+  );
+}
+
+function StockMovementModalInner(props: Readonly<Props> & { product: ProductListItem }) {
   const [quantity, setQuantity] = useState("");
   const [touched, setTouched] = useState(false);
-
-  useEffect(() => {
-    if (props.open) {
-      setQuantity("");
-      setTouched(false);
-    }
-  }, [props.open, props.product?.id, props.type]);
-
-  if (!props.open || !props.product) return null;
 
   const qtyNum = Number(quantity);
   const isInt = Number.isInteger(qtyNum);
