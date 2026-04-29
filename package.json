@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "user:create-admin": "tsx scripts/create-admin-user.ts",
+    "user:create-staff": "tsx scripts/create-staff-user.ts",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

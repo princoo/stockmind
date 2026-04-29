@@ -35,7 +35,11 @@ export default function LoginPage() {
     setIsLoading(false);
 
     if (!result || result.error) {
-      setError("Invalid email or password.");
+      if (result?.error === "Configuration") {
+        setError("Authentication is temporarily unavailable due to server configuration.");
+      } else {
+        setError("Invalid email or password.");
+      }
       return;
     }
 

@@ -10,14 +10,10 @@ loadEnv({ path: resolve(process.cwd(), ".env.local"), override: true });
 const args = process.argv.slice(2);
 const email = args[0];
 const password = args[1];
-const name = args[2] ?? "Admin";
-const roleArg = args[3] ?? "ADMIN";
-const role = roleArg.toUpperCase() === "STAFF" ? "STAFF" : "ADMIN";
+const name = args[2] ?? "Staff";
 
 if (!email || !password) {
-  console.error(
-    "Usage: pnpm run user:create-admin -- <email> <password> [name] [ADMIN|STAFF]",
-  );
+  console.error("Usage: pnpm run user:create-staff -- <email> <password> [name]");
   process.exit(1);
 }
 
@@ -44,13 +40,12 @@ const client = new Client({
 async function main() {
   await client.connect();
   const hashedPassword = await bcrypt.hash(password, 12);
-
   const userEmail = email.toLowerCase();
   const userId = `usr_${randomUUID().replaceAll("-", "")}`;
   const result = await client.query(
     `
       INSERT INTO "User" ("id", "name", "email", "password", "role")
-      VALUES ($1, $2, $3, $4, $5::"Role")
+      VALUES ($1, $2, $3, $4, 'STAFF'::"Role")
       ON CONFLICT ("email")
       DO UPDATE SET
         "name" = EXCLUDED."name",
@@ -58,15 +53,15 @@ async function main() {
         "role" = EXCLUDED."role"
       RETURNING "email"
     `,
-    [userId, name, userEmail, hashedPassword, role],
+    [userId, name, userEmail, hashedPassword],
   );
 
-  console.log(`${role} user ready: ${result.rows[0]?.email ?? userEmail}`);
+  console.log(`STAFF user ready: ${result.rows[0]?.email ?? userEmail}`);
 }
 
 main()
   .catch((error) => {
-    console.error("Failed to create admin user:", error);
+    console.error("Failed to create staff user:", error);
     process.exitCode = 1;
   })
   .finally(async () => {

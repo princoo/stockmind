@@ -82,7 +82,7 @@ export function PublicShell({ children, user }: PublicShellProps) {
               <Link
                 href="/dashboard"
                 className={`rounded-xl px-3 py-2 text-sm font-medium transition-all ${
-                  pathname.startsWith("/dashboard")
+                  pathname?.startsWith("/dashboard")
                     ? "bg-blue-50 text-blue-700"
                     : "text-zinc-600 hover:bg-zinc-100/70 hover:text-zinc-900"
                 }`}

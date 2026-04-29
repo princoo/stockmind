@@ -1,4 +1,5 @@
 import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import "server-only";
 
@@ -11,7 +12,19 @@ function createPrismaClient() {
   if (!url) {
     throw new Error("DATABASE_URL is not set");
   }
-  const adapter = new PrismaPg({ connectionString: url });
+
+  const parsedUrl = new URL(url);
+  parsedUrl.searchParams.delete("sslmode");
+  parsedUrl.searchParams.delete("sslrootcert");
+  parsedUrl.searchParams.delete("sslcert");
+  parsedUrl.searchParams.delete("sslkey");
+
+  const pool = new Pool({
+    connectionString: parsedUrl.toString(),
+    ssl: { rejectUnauthorized: false },
+  });
+  const adapter = new PrismaPg(pool);
+
   return new PrismaClient({
     adapter,
     log:
