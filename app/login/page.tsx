@@ -1,7 +1,6 @@
 ﻿"use client";
 
 import { useState, type ComponentProps } from "react";
-import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { AuthShell } from "@/components/auth/auth-shell";
@@ -51,12 +50,9 @@ export default function LoginPage() {
     <AuthShell
       title="Sign In"
       footer={
-        <>
-          <span>Don&apos;t have an account? </span>
-          <Link href="/signup" className="font-semibold text-[#0058be]">
-            Sign up
-          </Link>
-        </>
+        <span className="text-[#575e70]">
+          Accounts are created by an administrator. Contact your admin if you need access.
+        </span>
       }
     >
       <form onSubmit={onSubmit} className="space-y-4">

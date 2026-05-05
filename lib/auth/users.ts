@@ -29,3 +29,16 @@ export async function findUserByEmail(email: string) {
     },
   });
 }
+
+export async function listUsersForAdmin() {
+  return prisma.user.findMany({
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+}

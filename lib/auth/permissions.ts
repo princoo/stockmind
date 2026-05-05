@@ -3,6 +3,7 @@ import type { Role } from "@/generated/prisma/enums";
 
 export type AppPermission =
   | "VIEW_DASHBOARD"
+  | "MANAGE_USERS"
   | "VIEW_PRODUCTS"
   | "MANAGE_PRODUCTS"
   | "DELETE_PRODUCTS"
@@ -21,6 +22,7 @@ export type AppPermission =
 const rolePermissions: Record<Role, Set<AppPermission>> = {
   ADMIN: new Set<AppPermission>([
     "VIEW_DASHBOARD",
+    "MANAGE_USERS",
     "VIEW_PRODUCTS",
     "MANAGE_PRODUCTS",
     "DELETE_PRODUCTS",

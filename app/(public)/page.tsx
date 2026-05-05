@@ -33,10 +33,10 @@ export default function HomePage() {
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pb-12 pt-10 sm:px-6 lg:px-8">
       <section className="text-center">
-        <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
+        {/* <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
           <Sparkles size={14} />
           Inventory Precision Platform
-        </span>
+        </span> */}
         <h1 className="mt-4 text-4xl font-semibold tracking-tight text-zinc-900 sm:text-6xl">
           Inventory management,
           <br />
@@ -47,8 +47,8 @@ export default function HomePage() {
           modern dashboard built for growing teams.
         </p>
         <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-          <Link href="/signup" className="ui-btn-primary">
-            Start for free
+          <Link href="/login" className="ui-btn-primary">
+            Sign in
           </Link>
           <Link href="/login" className="ui-btn-secondary">
             Book demo
@@ -60,7 +60,7 @@ export default function HomePage() {
         <div className="mx-auto max-w-5xl rounded-2xl border border-white/70 bg-[#071326] p-4 shadow-[0_18px_50px_rgba(2,8,23,0.45)] sm:p-6">
           <div className="rounded-xl border border-blue-100/10 bg-linear-to-br from-[#0f274b] via-[#0b1f3f] to-[#08172d] p-5">
             <div className="mb-4 flex items-center justify-between">
-              <p className="text-lg font-semibold text-white">SmartStock</p>
+              <p className="text-lg font-semibold text-white">StockMind</p>
               <div className="flex gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
                 <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
@@ -132,8 +132,8 @@ export default function HomePage() {
             Launch your modern inventory workflow with stockmind in minutes.
           </p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/signup" className="ui-btn-primary">
-              Create free account
+            <Link href="/login" className="ui-btn-primary">
+              Sign in
             </Link>
             <Link
               href="/contact"

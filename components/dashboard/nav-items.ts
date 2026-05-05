@@ -12,6 +12,7 @@ export type DashboardNavItem = {
 
 export const dashboardNavItems: DashboardNavItem[] = [
   { label: "Dashboard", href: "/dashboard", permission: "VIEW_DASHBOARD" },
+  { label: "Users", href: "/users", permission: "MANAGE_USERS" },
   { label: "Products", href: "/products", permission: "VIEW_PRODUCTS" },
   { label: "Categories", href: "/categories", permission: "VIEW_CATEGORIES" },
   { label: "Inventory", href: "/inventory", permission: "VIEW_INVENTORY" },
