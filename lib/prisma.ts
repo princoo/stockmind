@@ -14,14 +14,46 @@ function createPrismaClient() {
   }
 
   const parsedUrl = new URL(url);
+  const sslMode = parsedUrl.searchParams.get("sslmode")?.toLowerCase() ?? null;
+  const hostname = parsedUrl.hostname;
+  const isLocalHost =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1";
+
   parsedUrl.searchParams.delete("sslmode");
   parsedUrl.searchParams.delete("sslrootcert");
   parsedUrl.searchParams.delete("sslcert");
   parsedUrl.searchParams.delete("sslkey");
 
+  // Local Postgres often has SSL off; forcing TLS causes P1011 "server does not support SSL".
+  // Hosted DBs (Neon, RDS, etc.) typically need TLS — use sslmode=require in DATABASE_URL or rely on remote default.
+  const mustDisableSsl =
+    sslMode === "disable" ||
+    sslMode === "allow" ||
+    (isLocalHost &&
+      sslMode !== "require" &&
+      sslMode !== "verify-full" &&
+      sslMode !== "verify-ca");
+
+  const wantsExplicitSsl =
+    sslMode === "require" ||
+    sslMode === "verify-full" ||
+    sslMode === "verify-ca" ||
+    sslMode === "prefer";
+
+  let ssl: false | { rejectUnauthorized: boolean };
+  if (mustDisableSsl) {
+    ssl = false;
+  } else if (!isLocalHost && (wantsExplicitSsl || !sslMode)) {
+    ssl = { rejectUnauthorized: false };
+  } else {
+    ssl = false;
+  }
+
   const pool = new Pool({
     connectionString: parsedUrl.toString(),
-    ssl: { rejectUnauthorized: false },
+    ssl,
   });
   const adapter = new PrismaPg(pool);
 

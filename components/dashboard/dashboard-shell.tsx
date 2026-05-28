@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { Role } from "@/generated/prisma/enums";
+import { DashboardMain } from "@/components/dashboard/dashboard-main";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Topbar } from "@/components/dashboard/topbar";
 
@@ -17,13 +18,11 @@ export function DashboardShell({
   role,
 }: DashboardShellProps) {
   return (
-    <div className="flex min-h-screen bg-transparent">
+    <div className="flex h-screen overflow-hidden bg-transparent">
       <Sidebar userName={userName} userEmail={userEmail} role={role} />
-      <div className="flex min-h-screen flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <Topbar role={role} />
-        <main className="flex-1 p-5 md:p-6 lg:p-7">
-          <div className="ui-stack-lg mx-auto w-full max-w-[1440px]">{children}</div>
-        </main>
+        <DashboardMain>{children}</DashboardMain>
       </div>
     </div>
   );

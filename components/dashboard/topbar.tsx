@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Bell, CircleHelp, Settings } from "lucide-react";
 import { io, type Socket } from "socket.io-client";
 import type { Role } from "@/generated/prisma/enums";
+import { canAccessStockPilot } from "@/components/dashboard/nav-items";
+import { StockPilotEntryButton } from "@/components/dashboard/stockpilot-entry-button";
 import type { NotificationListResponse } from "@/types/notifications";
 
 const dateFmt = new Intl.DateTimeFormat(undefined, {
@@ -138,6 +140,7 @@ export function Topbar({ role }: Readonly<{ role: Role }>) {
       </div>
 
       <div className="relative ml-4 flex items-center gap-3 text-white">
+        {canAccessStockPilot(role) ? <StockPilotEntryButton /> : null}
         <button
           type="button"
           className="ui-icon-btn relative"

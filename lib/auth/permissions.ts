@@ -58,3 +58,7 @@ export function getRoleFromSession(session: Session | null): Role | null {
 export function hasPermission(role: Role, permission: AppPermission): boolean {
   return rolePermissions[role].has(permission);
 }
+
+export function getPermissionsForRole(role: Role): AppPermission[] {
+  return Array.from(rolePermissions[role]);
+}
