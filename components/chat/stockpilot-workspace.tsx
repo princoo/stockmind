@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Activity,
   AudioLines,
-  Box,
   Mic,
   Paperclip,
   Plus,
@@ -12,7 +10,6 @@ import {
   SendHorizonal,
   Sparkles,
   Square,
-  Wrench,
   X,
 } from "lucide-react";
 import { StockPilotVoiceRoom } from "@/components/chat/stockpilot-voice-room";
@@ -26,12 +23,7 @@ import {
   MAX_CHAT_ATTACHMENT_MIB,
   MAX_CHAT_ATTACHMENT_TOTAL_MIB,
 } from "@/lib/chat-attachment-constants";
-import {
-  INTERACTION_MODE_LABELS,
-  INTERACTION_MODE_STORAGE_KEY,
-  readStoredInteractionMode,
-  type InteractionMode,
-} from "@/lib/chat-interaction-mode";
+import type { InteractionMode } from "@/lib/chat-interaction-mode";
 
 const SESSION_STORAGE_KEY = "stockmind-chat-session-id";
 
@@ -109,7 +101,7 @@ export function StockPilotWorkspace() {
   const [sessionId, setSessionId] = useState("");
   const [sessionReady, setSessionReady] = useState(false);
   const [responseMode, setResponseMode] = useState<ResponseMode>("detailed");
-  const [interactionMode, setInteractionMode] = useState<InteractionMode>("text");
+  const interactionMode: InteractionMode = "text";
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessions, setSessions] = useState<SessionPreview[]>([]);
@@ -136,7 +128,6 @@ export function StockPilotWorkspace() {
       try {
         const stored = sessionStorage.getItem(SESSION_STORAGE_KEY);
         setSessionId(stored?.trim() || generateSessionId());
-        setInteractionMode(readStoredInteractionMode());
       } catch {
         setSessionId(generateSessionId());
       } finally {
@@ -144,18 +135,6 @@ export function StockPilotWorkspace() {
       }
     });
   }, []);
-
-  const handleInteractionModeChange = (mode: InteractionMode) => {
-    setInteractionMode(mode);
-    try {
-      sessionStorage.setItem(INTERACTION_MODE_STORAGE_KEY, mode);
-    } catch {
-      /* ignore */
-    }
-    if (mode === "voice") {
-      toast.message("Voice chat mode — replies will be short and spoken-friendly.");
-    }
-  };
 
   useEffect(() => {
     if (!sessionId.trim()) return;
@@ -613,7 +592,7 @@ export function StockPilotWorkspace() {
 
   return (
     <div className="stockpilot-workspace relative z-0 flex h-full min-h-0 flex-1 flex-col overflow-hidden px-3 pb-3 pt-2 md:px-4 md:pb-4">
-      <div className="relative z-10 grid h-full min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[272px_minmax(0,1fr)_248px]">
+      <div className="relative z-10 grid h-full min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[272px_minmax(0,1fr)]">
         <aside className="stockpilot-glass hidden h-full min-h-0 flex-col overflow-hidden p-4 xl:flex">
           <div className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#0058be]/10 text-[#0058be]">
@@ -696,12 +675,7 @@ export function StockPilotWorkspace() {
                   StockPilot
                 </h1>
                 <p className="text-[11px] text-zinc-500">
-                  Inventory operations workspace
-                  {interactionMode === "voice" ? (
-                    <span className="ml-1.5 inline-flex items-center rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-[#0058be]">
-                      Voice replies
-                    </span>
-                  ) : null}
+                  Inventory operations assistant
                 </p>
               </div>
             </div>
@@ -715,22 +689,6 @@ export function StockPilotWorkspace() {
                 <Plus className="h-3.5 w-3.5" />
                 New
               </button>
-              <label htmlFor="interaction-mode" className="sr-only">
-                Chat mode
-              </label>
-              <select
-                id="interaction-mode"
-                value={interactionMode}
-                onChange={(e) =>
-                  handleInteractionModeChange(e.target.value as InteractionMode)
-                }
-                disabled={sending}
-                className="ui-select h-9 w-auto min-w-[8.5rem] py-1.5 text-xs disabled:opacity-60"
-                title="Text or voice chat response style"
-              >
-                <option value="text">{INTERACTION_MODE_LABELS.text}</option>
-                <option value="voice">{INTERACTION_MODE_LABELS.voice}</option>
-              </select>
               <label
                 htmlFor="response-mode"
                 className="hidden text-xs font-medium text-zinc-500 md:block"
@@ -959,9 +917,7 @@ export function StockPilotWorkspace() {
                   className={`rounded-lg p-2 transition disabled:opacity-50 ${
                     isRecording
                       ? "bg-rose-100 text-rose-700 hover:bg-rose-200"
-                      : interactionMode === "voice"
-                        ? "bg-blue-50 text-[#0058be] hover:bg-blue-100"
-                        : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700"
+                      : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700"
                   }`}
                   title={isRecording ? "Stop recording" : "Start voice input"}
                 >
@@ -988,9 +944,7 @@ export function StockPilotWorkspace() {
                   }}
                   placeholder={
                     sessionReady && sessionId.trim()
-                      ? interactionMode === "voice"
-                        ? "Type or use the mic — replies will be spoken-friendly..."
-                        : "Ask StockPilot anything about your inventory operations..."
+                      ? "Ask StockPilot anything about your inventory operations..."
                       : "Loading StockPilot session..."
                   }
                   className="max-h-32 min-h-[44px] w-full resize-none bg-transparent px-2 py-1.5 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none disabled:opacity-50"
@@ -1022,13 +976,7 @@ export function StockPilotWorkspace() {
               {MAX_CHAT_ATTACHMENT_TOTAL_MIB} MB combined.
             </p>
 
-            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-500">
-              <p>
-                Session:{" "}
-                <code className="rounded bg-white/40 px-1 py-0.5 text-zinc-700">
-                  {sessionId || "loading..."}
-                </code>
-              </p>
+            <div className="flex justify-end text-[11px] text-zinc-500">
               <button
                 type="button"
                 onClick={() => {
@@ -1046,64 +994,6 @@ export function StockPilotWorkspace() {
             </div>
           </footer>
         </section>
-
-        <aside className="stockpilot-glass hidden h-full min-h-0 flex-col overflow-hidden p-4 xl:flex">
-          <div className="shrink-0">
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-              Context
-            </p>
-            <p className="mt-1 text-sm font-medium text-zinc-800">Operational insights</p>
-          </div>
-
-          <div className="stockpilot-scrollbar mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-0.5">
-          <div className="rounded-xl border border-white/50 bg-white/35 p-3 backdrop-blur-sm">
-            <p className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
-              <Wrench className="h-3.5 w-3.5 text-[#0058be]" />
-              Active tools
-            </p>
-            <ul className="mt-2 space-y-1.5 text-[11px] text-zinc-600">
-              <li>Inventory lookup &amp; stock operations</li>
-              <li>Reports &amp; transaction history</li>
-              <li>Product &amp; supplier context</li>
-            </ul>
-          </div>
-
-          <div className="rounded-xl border border-white/50 bg-white/35 p-3 backdrop-blur-sm">
-            <p className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
-              <Activity className="h-3.5 w-3.5 text-[#0058be]" />
-              Session
-            </p>
-            <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">
-              Chat:{" "}
-              <span className="font-medium text-zinc-800">
-                {INTERACTION_MODE_LABELS[interactionMode]}
-              </span>
-            </p>
-            <p className="mt-1 text-[11px] leading-relaxed text-zinc-600">
-              Response:{" "}
-              <span className="font-medium text-zinc-800 capitalize">{responseMode}</span>
-            </p>
-            {pendingConfirmation ? (
-              <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">
-                Awaiting your confirmation for a sensitive action.
-              </p>
-            ) : (
-              <p className="mt-2 text-[11px] text-zinc-500">No pending actions.</p>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-white/50 bg-white/35 p-3 backdrop-blur-sm">
-            <p className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
-              <Box className="h-3.5 w-3.5 text-[#0058be]" />
-              Quick tips
-            </p>
-            <p className="mt-2 text-[11px] leading-relaxed text-zinc-600">
-              Attach spreadsheets or PDFs for richer analysis. Use voice input for hands-free
-              warehouse workflows.
-            </p>
-          </div>
-          </div>
-        </aside>
       </div>
 
       {voiceRoomOpen && sessionReady && sessionId.trim() ? (

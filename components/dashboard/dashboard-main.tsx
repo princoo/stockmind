@@ -22,8 +22,10 @@ export function DashboardMain({ children }: DashboardMainProps) {
   }
 
   return (
-    <main className="flex-1 p-5 md:p-6 lg:p-7">
-      <div className="ui-stack-lg mx-auto w-full max-w-[1440px]">{children}</div>
+    <main className="flex min-h-0 flex-1 overflow-y-auto">
+      <div className="ui-stack-lg ui-page-container mx-auto w-full max-w-[1440px] min-h-full">
+        {children}
+      </div>
     </main>
   );
 }

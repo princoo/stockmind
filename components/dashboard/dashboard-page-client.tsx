@@ -251,7 +251,7 @@ export function DashboardPageClient() {
               View all
             </Link>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto pb-4">
             <table className="min-w-full text-sm">
               <thead className="bg-[#f2f5ff] text-left text-xs uppercase tracking-wide text-zinc-600">
                 <tr>
@@ -275,7 +275,7 @@ export function DashboardPageClient() {
               View all products
             </Link>
           </div>
-          <div className="divide-y divide-zinc-100">{lowStockBody}</div>
+          <div className="divide-y divide-zinc-100 pb-4">{lowStockBody}</div>
         </section>
       </div>
     </div>

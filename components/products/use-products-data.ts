@@ -25,7 +25,7 @@ export function useProductsData() {
   const [result, setResult] = useState<ProductListResult>({
     items: [],
     page: 1,
-    pageSize: 5,
+    pageSize: 10,
     total: 0,
     totalPages: 1,
   });
@@ -39,7 +39,7 @@ export function useProductsData() {
   const fetchProducts = useCallback(async (currentQuery: QueryState) => {
     const params = new URLSearchParams({
       page: String(currentQuery.page),
-      pageSize: "5",
+      pageSize: "10",
       search: currentQuery.search,
       categoryId: currentQuery.categoryId,
       sortBy: currentQuery.sortBy,

@@ -6,7 +6,7 @@ const sortDirSet = new Set(["asc", "desc"]);
 
 export function parseListQuery(input: Record<string, string>): ProductListQuery {
   const page = Math.max(Number(input.page || "1"), 1);
-  const pageSize = Math.min(Math.max(Number(input.pageSize || "5"), 1), 50);
+  const pageSize = Math.min(Math.max(Number(input.pageSize || "10"), 1), 50);
   const sortBy = sortBySet.has(input.sortBy) ? input.sortBy : "createdAt";
   const sortDir = sortDirSet.has(input.sortDir) ? input.sortDir : "desc";
   return {

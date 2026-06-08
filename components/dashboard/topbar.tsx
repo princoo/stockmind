@@ -130,7 +130,7 @@ export function Topbar({ role }: Readonly<{ role: Role }>) {
   })();
 
   return (
-    <header className="ui-topbar-glass sticky top-0 z-30 mx-3 mt-3 flex h-16 items-center justify-between px-5">
+    <header className="ui-topbar-glass sticky top-0 z-30 mx-3 mt-3 flex shrink-0 items-center justify-between px-5 py-3.5">
       <div className="w-full max-w-md">
         <input
           type="search"

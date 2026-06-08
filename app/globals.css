@@ -90,6 +90,10 @@ body {
     @apply space-y-6 md:space-y-7;
   }
 
+  .ui-page-container {
+    @apply box-border px-5 pt-5 pb-12 md:px-6 md:pt-6 md:pb-14 lg:px-7 lg:pt-7 lg:pb-16;
+  }
+
   .stockpilot-workspace {
     @apply relative flex h-full min-h-0 flex-col overflow-hidden bg-linear-to-br from-[#f6f9ff] via-[#f2f6fc] to-[#eef3fb];
   }
