@@ -1,4 +1,5 @@
 import type { InteractionMode } from "@/lib/chat-interaction-mode";
+import type { ChatDownloadOffer } from "@/lib/chat-download";
 
 export type StockPilotResponseMode = "compact" | "detailed";
 
@@ -6,6 +7,7 @@ export type StockPilotChatResult = {
   reply: string;
   pendingConfirmation: boolean;
   pendingActionSummary: string | null;
+  download: ChatDownloadOffer | null;
 };
 
 export async function postStockPilotChat(params: {
@@ -31,6 +33,7 @@ export async function postStockPilotChat(params: {
     reply?: string;
     pendingConfirmation?: boolean;
     pendingActionSummary?: string | null;
+    download?: ChatDownloadOffer | null;
     /** Error payload when `response.ok` is false */
     error?: string;
   };
@@ -47,6 +50,7 @@ export async function postStockPilotChat(params: {
     reply,
     pendingConfirmation: Boolean(data.pendingConfirmation),
     pendingActionSummary: data.pendingActionSummary ?? null,
+    download: data.download ?? null,
   };
 }
 

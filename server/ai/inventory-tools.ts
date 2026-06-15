@@ -1,7 +1,5 @@
 import { z } from "zod";
 import { tool } from "@langchain/core/tools";
-import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@/generated/prisma/client";
 import {
   getPermissionsForRole,
   hasPermission,
@@ -10,7 +8,6 @@ import {
 import type { Role } from "@/generated/prisma/enums";
 import {
   createProductEntry,
-  getProducts,
   removeProductEntry,
   updateProductEntry,
 } from "@/server/products/service";
@@ -22,18 +19,32 @@ import {
 } from "@/server/categories/service";
 import {
   createSupplierEntry,
-  getSuppliers,
   removeSupplierEntry,
   updateSupplierEntry,
 } from "@/server/suppliers/service";
 import { recordStockMovement } from "@/server/inventory/service";
-import { getTransactions } from "@/server/transactions/service";
-import { getActivityLogs } from "@/server/activity-logs/service";
 import {
-  getNotifications,
+  fetchActivityLogsForAssistant,
+  fetchInventoryProductsForAssistant,
+  fetchNotificationsForAssistant,
+  fetchProductsForAssistant,
+  fetchSuppliersForAssistant,
+  fetchTransactionsForAssistant,
+} from "@/server/ai/assistant-list-queries";
+import {
+  buildAiToolListPayload,
+  stringifyAiToolList,
+} from "@/server/ai/tool-list-response";
+import {
   markNotificationAsRead,
   markNotificationsAsRead,
 } from "@/server/notifications/service";
+import { registerChatDownload } from "@/server/ai/chat-downloads";
+import {
+  buildProductsSpreadsheet,
+  type ProductExportScope,
+} from "@/server/exports/product-spreadsheet";
+import type { ChatDownloadOffer } from "@/lib/chat-download";
 
 type ToolActor = {
   userId: string;
@@ -50,23 +61,14 @@ function assertPermission(actor: ToolActor, permission: AppPermission) {
   return hasPermission(actor.role, permission) ? null : deny(permission);
 }
 
-function resolveStockStatus(quantity: number, lowStockThreshold: number) {
-  if (quantity <= 0) return "OUT_OF_STOCK";
-  if (quantity <= lowStockThreshold) return "LOW_STOCK";
-  return "IN_STOCK";
-}
-
 const checkInventorySchema = z.object({
   productId: z.string().trim().min(1).optional(),
   sku: z.string().trim().min(1).optional(),
   search: z.string().trim().min(1).optional(),
   availability: z.enum(["ALL", "AVAILABLE"]).default("ALL"),
-  limit: z.number().int().min(1).max(50).default(25),
 });
 
 const listProductsSchema = z.object({
-  page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(50).default(10),
   search: z.string().trim().optional(),
   categoryId: z.string().trim().optional(),
   sortBy: z.enum(["name", "price", "quantity", "createdAt"]).default("createdAt"),
@@ -106,8 +108,6 @@ const updateCategorySchema = createCategorySchema.extend({
 
 const listSuppliersSchema = z.object({
   search: z.string().trim().optional(),
-  page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(50).default(10),
   sortBy: z.enum(["name", "createdAt"]).default("createdAt"),
   sortDir: z.enum(["asc", "desc"]).default("desc"),
 });
@@ -131,8 +131,6 @@ const stockMovementSchema = z.object({
 });
 
 const listTransactionsSchema = z.object({
-  page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(50).default(15),
   search: z.string().optional(),
   type: z.enum(["STOCK_IN", "STOCK_OUT"]).optional(),
   dateFrom: z.string().optional(),
@@ -142,8 +140,6 @@ const listTransactionsSchema = z.object({
 });
 
 const listActivityLogsSchema = z.object({
-  page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(50).default(15),
   search: z.string().optional(),
   action: z.enum(["CREATE", "UPDATE", "DELETE"]).optional(),
   entity: z.enum(["PRODUCT", "CATEGORY", "SUPPLIER", "USER"]).optional(),
@@ -152,15 +148,26 @@ const listActivityLogsSchema = z.object({
   sortDir: z.enum(["asc", "desc"]).default("desc"),
 });
 
-const listNotificationsSchema = z.object({
-  limit: z.number().int().min(1).max(20).default(8),
-});
+const listNotificationsSchema = z.object({});
 
 const markNotificationReadSchema = z.object({
   notificationId: z.string().trim().min(1),
 });
 
-export function getInventoryTools(actor: ToolActor) {
+const exportProductsSpreadsheetSchema = z.object({
+  scope: z.enum(["all", "low_stock", "available"]).default("all"),
+  search: z.string().trim().optional(),
+  categoryId: z.string().trim().optional(),
+});
+
+export type InventoryToolHooks = {
+  onChatDownload?: (download: ChatDownloadOffer) => void;
+};
+
+export function getInventoryTools(
+  actor: ToolActor,
+  hooks?: InventoryToolHooks,
+) {
   const getCurrentSessionContextTool = tool(
     async () => {
       const permissions = getPermissionsForRole(actor.role);
@@ -183,60 +190,17 @@ export function getInventoryTools(actor: ToolActor) {
   );
 
   const checkInventoryTool = tool(
-    async ({ productId, sku, search, limit, availability }) => {
+    async (input) => {
       const permissionError = assertPermission(actor, "VIEW_INVENTORY");
       if (permissionError) return permissionError;
 
-      const where: Prisma.ProductWhereInput = {};
-      if (productId) where.id = productId;
-      else if (sku) where.sku = sku;
-      else if (search) {
-        where.OR = [
-          { name: { contains: search, mode: "insensitive" } },
-          { sku: { contains: search, mode: "insensitive" } },
-        ];
-      }
-      if (availability === "AVAILABLE") where.quantity = { gt: 0 };
-
-      const [items, totalMatching] = await Promise.all([
-        prisma.product.findMany({
-          where,
-          select: {
-            id: true,
-            name: true,
-            sku: true,
-            quantity: true,
-            lowStockThreshold: true,
-            price: true,
-            category: { select: { name: true } },
-            supplier: { select: { name: true } },
-          },
-          orderBy: { name: "asc" },
-          take: limit,
-        }),
-        prisma.product.count({ where }),
-      ]);
-
-      return JSON.stringify({
-        products: items.map((item) => ({
-          id: item.id,
-          name: item.name,
-          sku: item.sku,
-          quantity: item.quantity,
-          lowStockThreshold: item.lowStockThreshold,
-          status: resolveStockStatus(item.quantity, item.lowStockThreshold),
-          price: Number(item.price),
-          category: item.category.name,
-          supplier: item.supplier.name,
-        })),
-        returned: items.length,
-        totalMatching,
-      });
+      const { items, total } = await fetchInventoryProductsForAssistant(input);
+      return stringifyAiToolList(items, total);
     },
     {
       name: "checkInventory",
       description:
-        "Read inventory products. For broad listing, omit productId/sku/search.",
+        "Read inventory products. Returns the full matching set (not paginated). For broad listing, omit productId/sku/search.",
       schema: checkInventorySchema,
     },
   );
@@ -245,18 +209,13 @@ export function getInventoryTools(actor: ToolActor) {
     async (input) => {
       const permissionError = assertPermission(actor, "VIEW_PRODUCTS");
       if (permissionError) return permissionError;
-      const result = await getProducts(
-        Object.fromEntries(
-          Object.entries(input).flatMap(([k, v]) =>
-            v === undefined ? [] : [[k, String(v)]],
-          ),
-        ),
-      );
-      return JSON.stringify(result);
+      const { items, total } = await fetchProductsForAssistant(input);
+      return stringifyAiToolList(items, total);
     },
     {
       name: "getProducts",
-      description: "List products with pagination/search/sort.",
+      description:
+        "List products with optional search, category, and sort filters. Returns the full matching set (not paginated).",
       schema: listProductsSchema,
     },
   );
@@ -308,11 +267,11 @@ export function getInventoryTools(actor: ToolActor) {
       const permissionError = assertPermission(actor, "VIEW_CATEGORIES");
       if (permissionError) return permissionError;
       const result = await getCategories(search ? { search } : {});
-      return JSON.stringify(result);
+      return stringifyAiToolList(result.items, result.items.length);
     },
     {
       name: "getCategories",
-      description: "List categories.",
+      description: "List all matching categories (not paginated).",
       schema: listCategoriesSchema,
     },
   );
@@ -363,18 +322,13 @@ export function getInventoryTools(actor: ToolActor) {
     async (input) => {
       const permissionError = assertPermission(actor, "VIEW_SUPPLIERS");
       if (permissionError) return permissionError;
-      const result = await getSuppliers(
-        Object.fromEntries(
-          Object.entries(input).flatMap(([k, v]) =>
-            v === undefined ? [] : [[k, String(v)]],
-          ),
-        ),
-      );
-      return JSON.stringify(result);
+      const { items, total } = await fetchSuppliersForAssistant(input);
+      return stringifyAiToolList(items, total);
     },
     {
       name: "getSuppliers",
-      description: "List suppliers with pagination/search/sort.",
+      description:
+        "List suppliers with optional search and sort. Returns the full matching set (not paginated).",
       schema: listSuppliersSchema,
     },
   );
@@ -440,18 +394,13 @@ export function getInventoryTools(actor: ToolActor) {
     async (input) => {
       const permissionError = assertPermission(actor, "VIEW_TRANSACTIONS");
       if (permissionError) return permissionError;
-      const result = await getTransactions(
-        Object.fromEntries(
-          Object.entries(input).flatMap(([k, v]) =>
-            v === undefined ? [] : [[k, String(v)]],
-          ),
-        ),
-      );
-      return JSON.stringify(result);
+      const { items, total } = await fetchTransactionsForAssistant(input);
+      return stringifyAiToolList(items, total);
     },
     {
       name: "getTransactions",
-      description: "List transactions with pagination/filters.",
+      description:
+        "List transactions with optional filters. Returns the full matching set (not paginated).",
       schema: listTransactionsSchema,
     },
   );
@@ -460,30 +409,30 @@ export function getInventoryTools(actor: ToolActor) {
     async (input) => {
       const permissionError = assertPermission(actor, "VIEW_ACTIVITY_LOGS");
       if (permissionError) return permissionError;
-      const result = await getActivityLogs(
-        Object.fromEntries(
-          Object.entries(input).flatMap(([k, v]) =>
-            v === undefined ? [] : [[k, String(v)]],
-          ),
-        ),
-      );
-      return JSON.stringify(result);
+      const { items, total } = await fetchActivityLogsForAssistant(input);
+      return stringifyAiToolList(items, total);
     },
     {
       name: "getAuditLogs",
-      description: "List audit logs with filters.",
+      description:
+        "List audit logs with optional filters. Returns the full matching set (not paginated).",
       schema: listActivityLogsSchema,
     },
   );
 
   const getNotificationsTool = tool(
-    async ({ limit }) => {
-      const result = await getNotifications(actor.userId, limit);
-      return JSON.stringify(result);
+    async () => {
+      const { items, total, unreadCount } =
+        await fetchNotificationsForAssistant(actor.userId);
+      return JSON.stringify({
+        ...buildAiToolListPayload(items, total),
+        unreadCount,
+      });
     },
     {
       name: "getNotifications",
-      description: "Get notifications for current user.",
+      description:
+        "Get all notifications for the current user (not paginated).",
       schema: listNotificationsSchema,
     },
   );
@@ -512,6 +461,57 @@ export function getInventoryTools(actor: ToolActor) {
     },
   );
 
+  const exportProductsSpreadsheetTool = tool(
+    async ({ scope, search, categoryId }) => {
+      const permissionError = assertPermission(actor, "VIEW_PRODUCTS");
+      if (permissionError) return permissionError;
+
+      const { buffer, rowCount, filename } = await buildProductsSpreadsheet({
+        scope: scope as ProductExportScope,
+        search,
+        categoryId,
+      });
+
+      if (rowCount === 0) {
+        return JSON.stringify({
+          ok: false,
+          message: "No products matched the export filters.",
+        });
+      }
+
+      const token = registerChatDownload({
+        userId: actor.userId,
+        buffer,
+        filename,
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      const download: ChatDownloadOffer = {
+        url: `/api/chat/downloads/${token}`,
+        filename,
+        label: `Download ${filename}`,
+      };
+      hooks?.onChatDownload?.(download);
+
+      return JSON.stringify({
+        ok: true,
+        productCount: rowCount,
+        filename,
+        scope,
+        downloadUrl: download.url,
+        message:
+          "Excel export is ready. Tell the user to use the download button shown in the StockPilot UI.",
+      });
+    },
+    {
+      name: "exportProductsSpreadsheet",
+      description:
+        "Generate an Excel (.xlsx) export of products for download. Use when the user asks for a spreadsheet, Excel file, or downloadable product list. Supports scope all, low_stock, or available, plus optional search and categoryId filters.",
+      schema: exportProductsSpreadsheetSchema,
+    },
+  );
+
   return [
     getCurrentSessionContextTool,
     checkInventoryTool,
@@ -533,5 +533,6 @@ export function getInventoryTools(actor: ToolActor) {
     getNotificationsTool,
     markNotificationReadTool,
     markAllNotificationsReadTool,
+    exportProductsSpreadsheetTool,
   ];
 }

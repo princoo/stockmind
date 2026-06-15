@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
+  Download,
   Loader2,
   Mic,
   Pause,
@@ -12,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import type { StockPilotResponseMode } from "@/lib/stockpilot-voice-api";
+import type { ChatDownloadOffer } from "@/lib/chat-download";
 import {
   postStockPilotChat,
   synthesizeVoiceResponse,
@@ -35,7 +37,11 @@ type StockPilotVoiceRoomProps = {
   sessionId: string;
   responseMode: StockPilotResponseMode;
   onClose: () => void;
-  onExchange: (userText: string, assistantText: string) => void;
+  onExchange: (
+    userText: string,
+    assistantText: string,
+    download?: ChatDownloadOffer | null,
+  ) => void;
   pendingConfirmation: boolean;
   pendingActionSummary: string | null;
   onPendingChange: (
@@ -45,7 +51,7 @@ type StockPilotVoiceRoomProps = {
 };
 
 const STATUS_BY_PHASE: Record<VoiceRoomPhase, string> = {
-  idle: "Press and hold to speak",
+  idle: "Press and hold — or hold Space — to speak",
   recording: "Listening…",
   transcribing: "Understanding your request…",
   processing: "Processing request…",
@@ -53,6 +59,21 @@ const STATUS_BY_PHASE: Record<VoiceRoomPhase, string> = {
   awaiting_confirm: "Confirm the pending action to continue",
   error: "Something went wrong",
 };
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return target.isContentEditable;
+}
+
+function shouldIgnoreSpaceForPushToTalk(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (isEditableTarget(target)) return true;
+  const control = target.closest("button, a, [role='button'], [role='link']");
+  if (!(control instanceof HTMLElement)) return false;
+  return control.dataset.pushToTalk !== "true";
+}
 
 function pickMimeType(): string | undefined {
   const candidates = [
@@ -80,6 +101,9 @@ export function StockPilotVoiceRoom({
   );
   const [userTranscript, setUserTranscript] = useState("");
   const [assistantTranscript, setAssistantTranscript] = useState("");
+  const [activeDownload, setActiveDownload] = useState<ChatDownloadOffer | null>(
+    null,
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [ttsUnavailable, setTtsUnavailable] = useState(false);
 
@@ -87,6 +111,8 @@ export function StockPilotVoiceRoom({
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const holdActiveRef = useRef(false);
+  const spaceHoldRef = useRef(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const pipelineBusyRef = useRef(false);
   const processingToneRef = useRef(new VoiceRoomProcessingTone());
   const playbackAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -105,6 +131,11 @@ export function StockPilotVoiceRoom({
       releaseMedia();
     };
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    dialogRef.current?.focus({ preventScroll: true });
+  }, [mounted]);
 
   useEffect(() => {
     if (pendingConfirmation) {
@@ -220,7 +251,8 @@ export function StockPilotVoiceRoom({
 
       const reply = result.reply.trim();
       setAssistantTranscript(reply);
-      onExchange(transcript, reply);
+      setActiveDownload(result.download);
+      onExchange(transcript, reply, result.download);
 
       if (result.pendingConfirmation) {
         setPhase("awaiting_confirm");
@@ -231,7 +263,7 @@ export function StockPilotVoiceRoom({
       if (reply) {
         await playResponseAudio(reply, result.pendingConfirmation);
       } else {
-        setPhase(result.pendingConfirmation ? "awaiting_confirm" : "idle");
+        setPhase("idle");
         pipelineBusyRef.current = false;
       }
     } catch {
@@ -325,6 +357,7 @@ export function StockPilotVoiceRoom({
   };
 
   const stopRecordingFromHold = () => {
+    spaceHoldRef.current = false;
     if (!holdActiveRef.current) return;
     holdActiveRef.current = false;
 
@@ -336,6 +369,51 @@ export function StockPilotVoiceRoom({
 
     void processRecording();
   };
+
+  useEffect(() => {
+    const isPushToTalkBlocked = () =>
+      holdActiveRef.current ||
+      pipelineBusyRef.current ||
+      phase === "processing" ||
+      phase === "transcribing" ||
+      phase === "speaking" ||
+      pendingConfirmation;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      if (e.repeat) return;
+      if (shouldIgnoreSpaceForPushToTalk(e.target)) return;
+      if (isPushToTalkBlocked()) return;
+
+      e.preventDefault();
+      spaceHoldRef.current = true;
+      void startRecording();
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      if (!spaceHoldRef.current) return;
+
+      e.preventDefault();
+      spaceHoldRef.current = false;
+      stopRecordingFromHold();
+    };
+
+    const onWindowBlur = () => {
+      if (!spaceHoldRef.current) return;
+      spaceHoldRef.current = false;
+      stopRecordingFromHold();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onWindowBlur);
+    };
+  }, [phase, pendingConfirmation]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -374,7 +452,8 @@ export function StockPilotVoiceRoom({
       );
       const reply = result.reply.trim();
       setAssistantTranscript(reply);
-      onExchange(intent, reply);
+      setActiveDownload(result.download);
+      onExchange(intent, reply, result.download);
 
       if (reply && !result.pendingConfirmation) {
         await playResponseAudio(reply, result.pendingConfirmation);
@@ -447,7 +526,9 @@ export function StockPilotVoiceRoom({
 
   return createPortal(
     <div
-      className="stockpilot-voice-room fixed inset-0 z-[10000] flex h-dvh max-h-dvh flex-col overflow-hidden"
+      ref={dialogRef}
+      tabIndex={-1}
+      className="stockpilot-voice-room fixed inset-0 z-[10000] flex h-dvh max-h-dvh flex-col overflow-hidden outline-none"
       role="dialog"
       aria-modal="true"
       aria-label="StockPilot voice conversation"
@@ -491,6 +572,7 @@ export function StockPilotVoiceRoom({
           ) : null}
           <button
             type="button"
+            data-push-to-talk="true"
             disabled={buttonDisabled}
             onPointerDown={handlePointerDown}
             onPointerUp={handlePointerUp}
@@ -504,7 +586,7 @@ export function StockPilotVoiceRoom({
             style={{ transform: `scale(${pulseScale})` }}
             aria-label={
               phase === "idle"
-                ? "Press and hold to speak"
+                ? "Press and hold, or hold Space, to speak"
                 : STATUS_BY_PHASE[phase]
             }
           >
@@ -517,8 +599,10 @@ export function StockPilotVoiceRoom({
             )}
           </button>
           {phase === "idle" ? (
-            <p className="pointer-events-none absolute -bottom-9 left-1/2 w-max -translate-x-1/2 text-center text-xs font-medium text-zinc-600">
+            <p className="pointer-events-none absolute -bottom-10 left-1/2 w-max max-w-[16rem] -translate-x-1/2 text-center text-xs font-medium leading-snug text-zinc-600 sm:max-w-none">
               Press and hold
+              <span className="mx-1 text-zinc-400">·</span>
+              or hold <kbd className="rounded border border-zinc-300 bg-white/80 px-1 py-px font-mono text-[10px] text-zinc-700">Space</kbd>
             </p>
           ) : null}
         </div>
@@ -600,6 +684,16 @@ export function StockPilotVoiceRoom({
                 {ttsUnavailable ? " (text only — audio unavailable)" : ""}
               </p>
               <p className="text-sm text-zinc-800">{assistantTranscript}</p>
+              {activeDownload ? (
+                <a
+                  href={activeDownload.url}
+                  download={activeDownload.filename}
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[#0058be]/25 bg-[#0058be]/8 px-3 py-2 text-xs font-semibold text-[#0058be] transition hover:border-[#0058be]/40 hover:bg-[#0058be]/12"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {activeDownload.label}
+                </a>
+              ) : null}
             </div>
           ) : null}
         </div>

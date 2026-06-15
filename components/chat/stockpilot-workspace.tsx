@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   AudioLines,
+  Download,
   Mic,
   Paperclip,
   Plus,
@@ -24,6 +26,7 @@ import {
   MAX_CHAT_ATTACHMENT_TOTAL_MIB,
 } from "@/lib/chat-attachment-constants";
 import type { InteractionMode } from "@/lib/chat-interaction-mode";
+import type { ChatDownloadOffer } from "@/lib/chat-download";
 
 const SESSION_STORAGE_KEY = "stockmind-chat-session-id";
 
@@ -42,6 +45,7 @@ type ChatMessage = {
   role: ChatRole;
   content: string;
   attachments?: ChatAttachmentPreview[];
+  download?: ChatDownloadOffer;
 };
 
 type ResponseMode = "compact" | "detailed";
@@ -62,6 +66,7 @@ type SessionPreview = {
 
 const SUGGESTED_PROMPTS = [
   "Show low stock products",
+  "Export all products to Excel",
   "Generate stock report",
   "Add stock to Product X",
   "Show recent transactions",
@@ -329,6 +334,7 @@ export function StockPilotWorkspace() {
         message?: string;
         pendingConfirmation?: boolean;
         pendingActionSummary?: string | null;
+        download?: ChatDownloadOffer | null;
       };
 
       if (!res.ok) {
@@ -355,20 +361,34 @@ export function StockPilotWorkspace() {
           : "No reply text returned.";
 
       const hasPending = Boolean(data.pendingConfirmation);
-      setPendingConfirmation(hasPending);
-      setPendingActionSummary(
+      const nextSummary =
         hasPending && typeof data.pendingActionSummary === "string"
           ? data.pendingActionSummary
-          : null,
-      );
+          : null;
+      const nextDownload = data.download ?? undefined;
 
-      setInput("");
-      setPendingAttachments([]);
-      setMessages((prev) => [
-        ...prev,
-        { id: `a-${Date.now()}`, role: "assistant", content: reply },
-      ]);
-      await fetchSessions();
+      flushSync(() => {
+        setPendingConfirmation(hasPending);
+        setPendingActionSummary(nextSummary);
+        setInput("");
+        setPendingAttachments([]);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: "assistant",
+            content: reply,
+            ...(nextDownload ? { download: nextDownload } : {}),
+          },
+        ]);
+      });
+      setSending(false);
+      void fetchSessions().catch((error) => {
+        toast.error(
+          error instanceof Error ? error.message : "Failed to refresh sessions.",
+        );
+      });
+      return;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Network error.";
       toast.error(msg);
@@ -446,13 +466,24 @@ export function StockPilotWorkspace() {
     setPendingAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const appendVoiceExchange = (userText: string, assistantText: string) => {
+  const appendVoiceExchange = (
+    userText: string,
+    assistantText: string,
+    download?: ChatDownloadOffer | null,
+  ) => {
     const ts = Date.now();
     setMessages((prev) => [
       ...prev,
       { id: `voice-user-${ts}`, role: "user", content: userText },
       ...(assistantText.trim()
-        ? [{ id: `voice-assistant-${ts}`, role: "assistant" as const, content: assistantText }]
+        ? [
+            {
+              id: `voice-assistant-${ts}`,
+              role: "assistant" as const,
+              content: assistantText,
+              ...(download ? { download } : {}),
+            },
+          ]
         : []),
     ]);
   };
@@ -749,31 +780,43 @@ export function StockPilotWorkspace() {
                     </p>
                     <div className="mt-1">
                       {m.role === "assistant" ? (
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            p: ({ children }) => (
-                              <p className="mb-2 last:mb-0 whitespace-pre-wrap">{children}</p>
-                            ),
-                            ul: ({ children }) => (
-                              <ul className="mb-2 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>
-                            ),
-                            ol: ({ children }) => (
-                              <ol className="mb-2 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>
-                            ),
-                            li: ({ children }) => <li>{children}</li>,
-                            strong: ({ children }) => (
-                              <strong className="font-semibold">{children}</strong>
-                            ),
-                            code: ({ children }) => (
-                              <code className="rounded bg-zinc-100 px-1 py-0.5 text-[0.85em]">
-                                {children}
-                              </code>
-                            ),
-                          }}
-                        >
-                          {m.content}
-                        </ReactMarkdown>
+                        <>
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              p: ({ children }) => (
+                                <p className="mb-2 last:mb-0 whitespace-pre-wrap">{children}</p>
+                              ),
+                              ul: ({ children }) => (
+                                <ul className="mb-2 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>
+                              ),
+                              ol: ({ children }) => (
+                                <ol className="mb-2 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>
+                              ),
+                              li: ({ children }) => <li>{children}</li>,
+                              strong: ({ children }) => (
+                                <strong className="font-semibold">{children}</strong>
+                              ),
+                              code: ({ children }) => (
+                                <code className="rounded bg-zinc-100 px-1 py-0.5 text-[0.85em]">
+                                  {children}
+                                </code>
+                              ),
+                            }}
+                          >
+                            {m.content}
+                          </ReactMarkdown>
+                          {m.download ? (
+                            <a
+                              href={m.download.url}
+                              download={m.download.filename}
+                              className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[#0058be]/25 bg-[#0058be]/8 px-3 py-2 text-xs font-semibold text-[#0058be] transition hover:border-[#0058be]/40 hover:bg-[#0058be]/12"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              {m.download.label}
+                            </a>
+                          ) : null}
+                        </>
                       ) : (
                         <div className="space-y-2">
                           {m.attachments?.length ? (

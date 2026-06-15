@@ -26,6 +26,12 @@ import {
   setPendingSensitiveAction,
   type PendingSensitiveAction,
 } from "@/server/ai/pending-sensitive-actions";
+import {
+  buildVoiceResponseStyleContract,
+  sanitizeVoiceResponseText,
+  sanitizeVoiceSessionMessages,
+} from "@/server/ai/voice-response-text";
+import type { ChatDownloadOffer } from "@/lib/chat-download";
 
 const CHAT_WINDOW_SIZE = 10;
 const MAX_TOOL_ROUNDS = 4;
@@ -78,6 +84,8 @@ function buildRuntimeSessionContext(input: {
     "- You can and should use this runtime context to decide what the user is allowed to do.",
     "- Never claim you cannot know the current user or role; this section is authoritative for this request.",
     "- For any action outside allowed permissions, refuse and explain the missing permission.",
+    "- When the user wants a downloadable Excel/spreadsheet of products, call exportProductsSpreadsheet; StockPilot will show a download button.",
+    "- List tools return the full matching dataset (not paginated). Do not ask the user for a page number or assume partial results.",
   ].join("\n");
 }
 
@@ -102,7 +110,7 @@ function buildResponseStyleContract(responseMode: "compact" | "detailed") {
     "- Keep responses concise and scannable. Avoid decorative formatting.",
     "- For inventories/lists, use bullets or numbered lists; include key numeric values clearly.",
     "- Currency rule: all prices and monetary values must be shown in `RWF` (e.g., `RWF 30,000`), never `$`.",
-    "- For sensitive updates/deletes/stock mutations: always present intended action details first and require explicit user confirmation before execution.",
+    "- For sensitive updates/deletes/stock mutations: call the matching tool immediately so the Confirm/Cancel UI appears, summarize the intended change, and wait for confirmation before claiming success.",
     ...modeSpecific,
   ].join("\n");
 }
@@ -111,15 +119,10 @@ function buildVoiceChatModeContract(): string {
   return [
     "## Voice Chat Mode",
     "",
-    "You are now in voice chat mode. The user is interacting via speech (voice input and/or listening to replies read aloud).",
-    "",
-    "Response rules for voice chat mode:",
-    "- Use concise, natural, spoken-friendly language that is easy to understand when read aloud.",
-    "- Prefer short sentences and brief paragraphs over long structured documents.",
-    "- Avoid heavy Markdown formatting: no large bullet lists, tables, or multi-level headings unless essential.",
-    "- State key numbers and outcomes clearly in plain language (still use RWF for money).",
-    "- Keep the same factual accuracy and tool usage; only change how you phrase the answer.",
-    "- Do not mention that you are in voice mode unless the user asks.",
+    "You are in voice chat mode (speech in, spoken reply out).",
+    "- Keep the same factual accuracy and tool usage as text mode.",
+    "- Do not mention voice mode unless the user asks.",
+    "- Follow the Voice Response Format rules above; they override any Markdown formatting guidance.",
   ].join("\n");
 }
 
@@ -129,11 +132,16 @@ function buildSystemPromptSections(input: {
   responseStyleContract: string;
   interactionMode: "text" | "voice";
 }): string {
+  const responseStyle =
+    input.interactionMode === "voice"
+      ? buildVoiceResponseStyleContract()
+      : input.responseStyleContract;
+
   const sections = [
     systemContextMarkdown,
     input.runtimeSessionContext,
     input.pendingActionContext,
-    input.responseStyleContract,
+    responseStyle,
   ];
   if (input.interactionMode === "voice") {
     sections.push(buildVoiceChatModeContract());
@@ -197,11 +205,16 @@ function buildSensitiveActionSummary(toolName: string, args: unknown): string {
   return `${toolName} with ${JSON.stringify(args)}`;
 }
 
-function parseConfirmationIntent(
-  message: string,
-  hasPending: boolean,
-): ConfirmationIntent {
-  if (!hasPending) return null;
+const BARE_CONFIRMATION_MAX_LEN = 48;
+
+function isBareConfirmationMessage(message: string): boolean {
+  const trimmed = message.trim();
+  if (!trimmed || trimmed.length > BARE_CONFIRMATION_MAX_LEN) return false;
+  return !/[.!?]/.test(trimmed);
+}
+
+function parseBareConfirmationReply(message: string): ConfirmationIntent {
+  if (!isBareConfirmationMessage(message)) return null;
 
   const text = message.trim().toLowerCase();
   if (
@@ -220,6 +233,33 @@ function parseConfirmationIntent(
   return null;
 }
 
+function parseConfirmationIntent(
+  message: string,
+  hasPending: boolean,
+): ConfirmationIntent {
+  const text = message.trim().toLowerCase();
+  if (!text) return null;
+
+  if (hasPending) {
+    if (
+      /\b(cancel|stop|abort|don'?t|do not|no|discard)\b/.test(text) &&
+      !/\b(confirm|proceed)\b/.test(text)
+    ) {
+      return "cancel";
+    }
+    if (
+      /\b(confirm|proceed|yes|yeah|yea|yep|ok|okay|go ahead|execute|do it)\b/.test(
+        text,
+      )
+    ) {
+      return "confirm";
+    }
+    return null;
+  }
+
+  return parseBareConfirmationReply(message);
+}
+
 function buildPendingActionContext(pending: PendingSensitiveAction | null): string {
   if (!pending) {
     return [
@@ -227,7 +267,8 @@ function buildPendingActionContext(pending: PendingSensitiveAction | null): stri
       "",
       "No pending sensitive action confirmation for this session.",
       "",
-      "When you need approval for a sensitive mutation, you MUST call the relevant tool first so the StockMind UI can show the Confirm/Cancel control. Do not only ask in plain text.",
+      "When approval is needed for a sensitive mutation you MUST call the relevant tool in that same turn (before your final reply) so StockMind can show the Confirm/Cancel control immediately.",
+      "Never ask only in plain text without calling the tool — the popup is driven by the tool call, not by your wording alone.",
     ].join("\n");
   }
   return [
@@ -251,6 +292,7 @@ async function executeToolCalls(params: {
   messages: BaseMessage[];
   sessionId: string;
   userId: string;
+  userMessage: string;
   confirmationIntent: ConfirmationIntent;
   executedSensitiveKeys: Set<string>;
 }): Promise<{ blockedForConfirmation: boolean; executedSensitive: boolean }> {
@@ -260,9 +302,11 @@ async function executeToolCalls(params: {
     messages,
     sessionId,
     userId,
+    userMessage,
     confirmationIntent,
     executedSensitiveKeys,
   } = params;
+  const bareConfirmationReply = parseBareConfirmationReply(userMessage);
   let blockedForConfirmation = false;
   let executedSensitive = false;
 
@@ -323,9 +367,15 @@ async function executeToolCalls(params: {
           continue;
         }
         await clearPendingSensitiveAction(userId, sessionId);
-      } else if (confirmationIntent === "confirm") {
-        await clearPendingSensitiveAction(userId, sessionId);
-      } else {
+      } else if (bareConfirmationReply === "cancel") {
+        messages.push(
+          new ToolMessage({
+            tool_call_id: toolCallId,
+            content: `Action cancelled by user. Did not execute: ${actionSummary}.`,
+          }),
+        );
+        continue;
+      } else if (bareConfirmationReply !== "confirm") {
         await setPendingSensitiveAction(userId, sessionId, {
           toolName: toolCall.name,
           argsKey,
@@ -379,6 +429,7 @@ async function runAgentLoop(params: {
   toolsByName: Map<string, ToolInvoker>;
   sessionId: string;
   userId: string;
+  userMessage: string;
   confirmationIntent: ConfirmationIntent;
 }): Promise<{ text: string; executedSensitive: boolean }> {
   const {
@@ -388,6 +439,7 @@ async function runAgentLoop(params: {
     toolsByName,
     sessionId,
     userId,
+    userMessage,
     confirmationIntent,
   } = params;
   const executedSensitiveKeys = new Set<string>();
@@ -408,6 +460,7 @@ async function runAgentLoop(params: {
       messages,
       sessionId,
       userId,
+      userMessage,
       confirmationIntent,
       executedSensitiveKeys,
     });
@@ -545,12 +598,20 @@ export async function POST(request: Request) {
     }
 
     const permissions = getPermissionsForRole(session.user.role);
-    const tools = getInventoryTools({
-      userId: session.user.id,
-      role: session.user.role,
-      userName: session.user.name,
-      userEmail: session.user.email,
-    });
+    let chatDownload: ChatDownloadOffer | null = null;
+    const tools = getInventoryTools(
+      {
+        userId: session.user.id,
+        role: session.user.role,
+        userName: session.user.name,
+        userEmail: session.user.email,
+      },
+      {
+        onChatDownload: (download) => {
+          chatDownload = download;
+        },
+      },
+    );
     const toolsByName = new Map(
       tools.map((tool) => [
         tool.name,
@@ -593,6 +654,7 @@ export async function POST(request: Request) {
       toolsByName,
       sessionId,
       userId: session.user.id,
+      userMessage: message,
       confirmationIntent,
     });
 
@@ -600,6 +662,10 @@ export async function POST(request: Request) {
     if (!finalText) {
       finalText =
         "I could not complete that request yet. Please clarify what inventory action you want.";
+    }
+
+    if (interactionMode === "voice") {
+      finalText = sanitizeVoiceResponseText(finalText);
     }
 
     if (agentResult.executedSensitive) {
@@ -610,7 +676,10 @@ export async function POST(request: Request) {
       ? null
       : await getPendingSensitiveAction(session.user.id, sessionId);
 
-    const messagesForPersistence = [...messages];
+    const messagesForPersistence = sanitizeVoiceSessionMessages(
+      [...messages],
+      interactionMode,
+    );
     messagesForPersistence[userTurnIndex] = new HumanMessage(persistedHumanText);
     await saveSessionHistory(
       session.user.id,
@@ -622,6 +691,7 @@ export async function POST(request: Request) {
       message: finalText,
       pendingConfirmation: Boolean(pendingAfterTurn),
       pendingActionSummary: pendingAfterTurn?.summary ?? null,
+      download: chatDownload,
     });
   } catch (error) {
     return NextResponse.json({ message: asErrorMessage(error) }, { status: 500 });
