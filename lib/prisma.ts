@@ -5,9 +5,20 @@ import "server-only";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
+  pool: Pool | undefined;
 };
 
-function createPrismaClient() {
+function resolvePoolMax(): number {
+  const configured = Number(process.env.DATABASE_POOL_MAX);
+  if (Number.isFinite(configured) && configured > 0) {
+    return Math.floor(configured);
+  }
+  // Hosted plans (e.g. Aiven hobby) often allow ~10 total connections.
+  // Next.js dev hot reload can spawn extra pools, so keep this low.
+  return process.env.NODE_ENV === "production" ? 5 : 2;
+}
+
+function createPgPool(): Pool {
   const url = process.env.DATABASE_URL;
   if (!url) {
     throw new Error("DATABASE_URL is not set");
@@ -27,7 +38,7 @@ function createPrismaClient() {
   parsedUrl.searchParams.delete("sslkey");
 
   // Local Postgres often has SSL off; forcing TLS causes P1011 "server does not support SSL".
-  // Hosted DBs (Neon, RDS, etc.) typically need TLS — use sslmode=require in DATABASE_URL or rely on remote default.
+  // Hosted DBs (Neon, RDS, Aiven, etc.) typically need TLS — use sslmode=require in DATABASE_URL.
   const mustDisableSsl =
     sslMode === "disable" ||
     sslMode === "allow" ||
@@ -51,11 +62,27 @@ function createPrismaClient() {
     ssl = false;
   }
 
-  const pool = new Pool({
+  return new Pool({
     connectionString: parsedUrl.toString(),
     ssl,
+    max: resolvePoolMax(),
+    idleTimeoutMillis: 20_000,
+    connectionTimeoutMillis: 10_000,
   });
-  const adapter = new PrismaPg(pool);
+}
+
+function getPgPool(): Pool {
+  if (globalForPrisma.pool) {
+    return globalForPrisma.pool;
+  }
+
+  const pool = createPgPool();
+  globalForPrisma.pool = pool;
+  return pool;
+}
+
+function createPrismaClient(): PrismaClient {
+  const adapter = new PrismaPg(getPgPool());
 
   return new PrismaClient({
     adapter,
@@ -66,14 +93,20 @@ function createPrismaClient() {
   });
 }
 
+function getPrismaClient(): PrismaClient {
+  if (globalForPrisma.prisma) {
+    return globalForPrisma.prisma;
+  }
+
+  const client = createPrismaClient();
+  globalForPrisma.prisma = client;
+  return client;
+}
+
 /**
  * PrismaClient singleton for Next.js App Router.
- * Prevents exhausting DB connections in dev (hot reload) and reuses one instance in production.
+ * Reuses one pg Pool + Prisma instance across hot reloads to avoid exhausting
+ * hosted DB connection limits (e.g. Aiven).
  * Use only in Server Components, Server Actions, Route Handlers, and other server-only code.
  */
-export const prisma: PrismaClient =
-  globalForPrisma.prisma ?? createPrismaClient();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+export const prisma: PrismaClient = getPrismaClient();

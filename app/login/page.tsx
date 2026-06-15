@@ -102,20 +102,6 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between py-1">
-          <label className="flex items-center gap-2 text-[13px] text-[#575e70]">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-              className="h-4 w-4 border border-[#c2c6d6]"
-            />
-            <span>Remember me</span>
-          </label>
-          <button type="button" className="text-[13px] text-[#0058be]">
-            Forgot password?
-          </button>
-        </div>
 
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
