@@ -1,12 +1,13 @@
-import Link from "next/link";
+import { getServerSession } from "next-auth";
 import {
   Bot,
   ChartColumnIncreasing,
   ShieldCheck,
-  Sparkles,
   Star,
   Zap,
 } from "lucide-react";
+import { PublicHomeActions } from "@/components/public/public-home-actions";
+import { authOptions } from "@/lib/auth/options";
 
 const pillars = [
   {
@@ -29,7 +30,10 @@ const pillars = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await getServerSession(authOptions);
+  const isAuthenticated = Boolean(session?.user?.id);
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pb-12 pt-10 sm:px-6 lg:px-8">
       <section className="text-center">
@@ -46,14 +50,7 @@ export default function HomePage() {
           Gain complete control over products, stock flow, and supplier operations from one
           modern dashboard built for growing teams.
         </p>
-        <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-          <Link href="/login" className="ui-btn-primary">
-            Sign in
-          </Link>
-          <Link href="/login" className="ui-btn-secondary">
-            Book demo
-          </Link>
-        </div>
+        <PublicHomeActions isAuthenticated={isAuthenticated} />
       </section>
 
       <section className="mt-10">
@@ -131,17 +128,7 @@ export default function HomePage() {
           <p className="mx-auto mt-2 max-w-2xl text-sm text-indigo-100/80">
             Launch your modern inventory workflow with stockmind in minutes.
           </p>
-          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/login" className="ui-btn-primary">
-              Sign in
-            </Link>
-            <Link
-              href="/contact"
-              className="inline-flex items-center justify-center rounded-xl border border-white/25 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-white/10"
-            >
-              Contact sales
-            </Link>
-          </div>
+          <PublicHomeActions isAuthenticated={isAuthenticated} variant="footer" />
           <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-indigo-100/80">
             <ShieldCheck size={14} />
             Trusted by operations teams and growing businesses.

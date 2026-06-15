@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
   AudioLines,
+  ChevronDown,
+  ChevronUp,
   Download,
   Mic,
   Paperclip,
@@ -29,6 +31,7 @@ import type { InteractionMode } from "@/lib/chat-interaction-mode";
 import type { ChatDownloadOffer } from "@/lib/chat-download";
 
 const SESSION_STORAGE_KEY = "stockmind-chat-session-id";
+const SUGGESTED_PROMPTS_COLLAPSED_KEY = "stockmind-suggested-prompts-collapsed";
 
 const ATTACHMENT_EXT_RE =
   /\.(jpe?g|png|gif|webp|pdf|xlsx|xls|docx)$/i;
@@ -121,6 +124,7 @@ export function StockPilotWorkspace() {
   const [hydratingHistory, setHydratingHistory] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<File[]>([]);
   const [voiceRoomOpen, setVoiceRoomOpen] = useState(false);
+  const [suggestedPromptsOpen, setSuggestedPromptsOpen] = useState(true);
   const listEndRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const optimisticUserSeqRef = useRef(0);
@@ -138,6 +142,13 @@ export function StockPilotWorkspace() {
       } finally {
         setSessionReady(true);
       }
+
+      try {
+        const collapsed = localStorage.getItem(SUGGESTED_PROMPTS_COLLAPSED_KEY);
+        if (collapsed === "true") setSuggestedPromptsOpen(false);
+      } catch {
+        /* ignore */
+      }
     });
   }, []);
 
@@ -149,6 +160,18 @@ export function StockPilotWorkspace() {
       /* ignore quota / private mode */
     }
   }, [sessionId]);
+
+  const toggleSuggestedPrompts = useCallback(() => {
+    setSuggestedPromptsOpen((open) => {
+      const next = !open;
+      try {
+        localStorage.setItem(SUGGESTED_PROMPTS_COLLAPSED_KEY, String(!next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
   const fetchSessions = useCallback(async () => {
     const response = await fetch("/api/chat/sessions?limit=50");
@@ -854,18 +877,39 @@ export function StockPilotWorkspace() {
 
           <footer className="shrink-0 px-3 pb-3 pt-2 md:px-4 md:pb-4">
             <div className="stockpilot-floating-bar mx-auto w-full max-w-2xl space-y-3 p-4 md:p-5">
-            <div className="flex flex-wrap gap-2">
-              {SUGGESTED_PROMPTS.map((action) => (
-                <button
-                  key={action}
-                  type="button"
-                  onClick={() => void sendTextOnly(action)}
-                  disabled={sending || !sessionReady}
-                  className="rounded-full border border-white/50 bg-white/35 px-3.5 py-1.5 text-xs font-medium text-[#0058be] backdrop-blur-sm transition hover:border-blue-200/80 hover:bg-white/50 disabled:opacity-50"
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={toggleSuggestedPrompts}
+                className="flex w-full items-center justify-between gap-2 rounded-lg px-1 py-0.5 text-left text-xs font-medium text-zinc-500 transition hover:text-zinc-700"
+                aria-expanded={suggestedPromptsOpen}
+                aria-controls="stockpilot-suggested-prompts"
+              >
+                <span>Quick actions</span>
+                {suggestedPromptsOpen ? (
+                  <ChevronUp className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                )}
+              </button>
+              {suggestedPromptsOpen ? (
+                <div
+                  id="stockpilot-suggested-prompts"
+                  className="flex flex-wrap gap-2"
                 >
-                  {action}
-                </button>
-              ))}
+                  {SUGGESTED_PROMPTS.map((action) => (
+                    <button
+                      key={action}
+                      type="button"
+                      onClick={() => void sendTextOnly(action)}
+                      disabled={sending || !sessionReady}
+                      className="rounded-full border border-white/50 bg-white/35 px-3.5 py-1.5 text-xs font-medium text-[#0058be] backdrop-blur-sm transition hover:border-blue-200/80 hover:bg-white/50 disabled:opacity-50"
+                    >
+                      {action}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
 
             {pendingConfirmation ? (
